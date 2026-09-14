@@ -62,5 +62,14 @@ let package = Package(
       ],
       path: "Examples/PlatformExecutors"
     ),
+    // The wasm32-unknown-wasip1-threads probe (a no-op elsewhere): runs the
+    // platform executors as the default executors under a wasi-threads host.
+    .executableTarget(
+      name: "PlatformExecutorsWASIExample",
+      dependencies: [
+        .target(name: "PlatformExecutors")
+      ],
+      path: "Examples/WASIThreads"
+    ),
   ]
 )

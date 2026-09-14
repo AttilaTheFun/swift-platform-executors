@@ -23,7 +23,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if os(Linux) || os(FreeBSD) || canImport(Darwin)
+#if os(Linux) || os(FreeBSD) || canImport(Darwin) || os(WASI)
 
 #if canImport(Glibc)
 @preconcurrency import Glibc
@@ -31,6 +31,8 @@
 @preconcurrency import Musl
 #elseif canImport(Darwin)
 import Darwin
+#elseif os(WASI)
+import WASILibc
 #endif
 
 enum SystemCoreCount {
@@ -45,6 +47,13 @@ enum SystemCoreCount {
     } else {
       return sysconf(CInt(_SC_NPROCESSORS_ONLN))
     }
+    #elseif os(WASI)
+    // wasi-libc reports one processor whatever the host has (WASI preview 1
+    // exposes no CPU count), so a pool sized from it would never fan out.
+    // Four keeps `TaskGroup`/`async let` parallel on the common hosts; the
+    // `SWIFT_PLATFORM_DEFAULT_EXECUTOR_POOL_SIZE` environment variable
+    // sizes it exactly.
+    return max(4, sysconf(CInt(_SC_NPROCESSORS_ONLN)))
     #else
     return sysconf(CInt(_SC_NPROCESSORS_ONLN))
     #endif

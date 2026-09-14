@@ -7,7 +7,7 @@ This package provides platform-native executors for Swift Concurrency.
 
 🚀 Swift package for Swift Concurrency executors
 📦 Compatible with Swift Package Manager
-📱 Supports Linux, Windows, iOS, macOS, watchOS, tvOS, and visionOS
+📱 Supports Linux, Windows, iOS, macOS, watchOS, tvOS, visionOS, and WebAssembly (wasi-threads)
 🔧 Built with Swift 6.2+, Xcode 26+
 
 🔗 Jump to:
@@ -176,6 +176,43 @@ If you have a custom Win32 thread pool that you wish to use instead,
 you can use the `Win32ThreadPoolExecutor(pool: PTP_POOL?)` API to
 construct an executor that will target that thread pool specifically.
 Passing `nil` to that API will use the default pool.
+
+#### WebAssembly (`wasm32-unknown-wasip1-threads`)
+
+On the wasi-threads triple the pthread executors are the platform executors:
+wasi-libc maps `pthread_create` onto `wasi_thread_spawn`, so
+`PlatformExecutorFactory.defaultExecutor` is a `PThreadTaskExecutor` whose
+workers are real threads over the module's shared memory, and the main
+executor takes over the module's main thread. `Task`, `TaskGroup` and
+`async let` then run in parallel on hosts that support wasi-threads
+(wasmtime with `-W threads=y,shared-memory=y`, WAMR with threads enabled).
+
+WASI reports one processor whatever the host has, so the default pool has
+four executors; set `SWIFT_PLATFORM_DEFAULT_EXECUTOR_POOL_SIZE` in the
+module's environment to size it exactly.
+
+Two caveats apply until the toolchain catches up:
+
+- The `DefaultExecutorFactory` type alias is only honored on WASI when the
+  module is compiled with `-Xfrontend -disable-availability-checking`
+  (the `CustomGlobalExecutors` feature is not yet enabled by default).
+- The stdlib shipped for the threads triple must be built with
+  `SWIFT_STDLIB_SINGLE_THREADED_CONCURRENCY=FALSE`
+  ([swiftlang/swift#92018](https://github.com/swiftlang/swift/pull/92018));
+  earlier threads SDKs report every thread as the main thread, so
+  main-actor isolation checks are wrong under any custom executor.
+
+`Examples/WASIThreads` is a probe that installs the executors as the
+defaults and checks parallelism, main-thread isolation and delayed
+scheduling under a wasi-threads host:
+
+```sh
+swift build --swift-sdk <wasm32-unknown-wasip1-threads SDK> \
+  -Xswiftc -Xfrontend -Xswiftc -disable-availability-checking \
+  --product PlatformExecutorsWASIExample
+wasmtime run -W threads=y,shared-memory=y -S threads=y \
+  .build/wasm32-unknown-wasip1-threads/debug/PlatformExecutorsWASIExample.wasm
+```
 
 ## 📘 Documentation
 

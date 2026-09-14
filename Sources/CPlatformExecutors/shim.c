@@ -64,3 +64,69 @@ void CPlatformExecutors_dispatchMain(void) {
 }
 
 #endif // __has_include(<dispatch/dispatch.h>)
+
+// wasm32-unknown-wasip1-threads support
+#ifdef __wasi__
+
+#include <CPlatformExecutors.h>
+#include <limits.h>
+#include <time.h>
+
+#define CPLATFORM_EXECUTORS_WASI_THREAD_STACK_SIZE (4 * 1024 * 1024)
+
+int CPlatformExecutors_wasi_pthread_create(pthread_t *thread, void *(*start)(void *), void *arg) {
+    pthread_attr_t attr;
+    int result = pthread_attr_init(&attr);
+    if (result != 0) {
+        return result;
+    }
+    result = pthread_attr_setstacksize(&attr, CPLATFORM_EXECUTORS_WASI_THREAD_STACK_SIZE);
+    if (result == 0) {
+        result = pthread_create(thread, &attr, start, arg);
+    }
+    pthread_attr_destroy(&attr);
+    return result;
+}
+
+void CPlatformExecutors_wasi_deadline(long long nanoseconds, struct timespec *deadline) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_REALTIME, &now) != 0) {
+        now.tv_sec = 0;
+        now.tv_nsec = 0;
+    }
+    if (nanoseconds < 0) {
+        nanoseconds = 0;
+    }
+    long long seconds = nanoseconds / 1000000000LL;
+    long long remainder = nanoseconds % 1000000000LL;
+    long long total_seconds = (long long)now.tv_sec + seconds;
+    long long total_nanoseconds = (long long)now.tv_nsec + remainder;
+    if (total_nanoseconds >= 1000000000LL) {
+        total_nanoseconds -= 1000000000LL;
+        total_seconds += 1;
+    }
+    if (total_seconds < (long long)now.tv_sec || total_seconds > (long long)LONG_MAX) {
+        // Saturate: a deadline this far out is effectively "block".
+        total_seconds = LONG_MAX;
+        total_nanoseconds = 999999999LL;
+    }
+    deadline->tv_sec = (time_t)total_seconds;
+    deadline->tv_nsec = (long)total_nanoseconds;
+}
+
+// wasi-libc declares pthread_setname_np/pthread_getname_np but does not
+// define them (no thread names in WASI): names are accepted and dropped.
+int CPlatformExecutors_pthread_setname_np(pthread_t thread, const char *name) {
+    (void)thread;
+    (void)name;
+    return 0;
+}
+
+int CPlatformExecutors_pthread_getname_np(pthread_t thread, char *name, size_t len) {
+    (void)thread;
+    (void)name;
+    (void)len;
+    return -1;
+}
+
+#endif // __wasi__

@@ -64,3 +64,7 @@ Alternatively, you can use the following platform specific executors:
 * ``PThreadMainExecutor``
 * ``PThreadExecutor``
 * ``PThreadPoolExecutor``
+
+The pthread executors are also the platform executors on
+`wasm32-unknown-wasip1-threads`, where wasi-libc maps `pthread_create` onto
+`wasi_thread_spawn`; see the package README for the toolchain caveats.

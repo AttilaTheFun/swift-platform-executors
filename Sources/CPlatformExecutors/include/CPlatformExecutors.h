@@ -25,7 +25,32 @@ int CPlatformExecutors_pthread_getname_np(pthread_t thread, char *name, size_t l
 
 #endif
 
+#ifndef __wasi__
 #include <dlfcn.h>
+#endif
+
+#ifdef __wasi__
+// wasm32-unknown-wasip1-threads: wasi-libc maps pthread_create onto
+// wasi_thread_spawn. The pieces Swift cannot express directly live here.
+#include <pthread.h>
+#include <stddef.h>
+#include <time.h>
+
+// Creates a thread with an explicit stack: wasi-libc's default thread stack
+// is small and there is no guard page on wasm, so an executor thread gets a
+// 4 MiB stack of its own.
+int CPlatformExecutors_wasi_pthread_create(pthread_t *thread, void *(*start)(void *), void *arg);
+
+// An absolute CLOCK_REALTIME deadline `nanoseconds` from now, for
+// pthread_cond_timedwait (CLOCK_REALTIME is a pointer macro in wasi-libc,
+// which Swift cannot import). Saturates instead of overflowing.
+void CPlatformExecutors_wasi_deadline(long long nanoseconds, struct timespec *deadline);
+
+// The thread-name calls, by the same names the Linux shims use (no-ops:
+// wasi-libc declares but does not define them).
+int CPlatformExecutors_pthread_setname_np(pthread_t thread, const char *name);
+int CPlatformExecutors_pthread_getname_np(pthread_t thread, char *name, size_t len);
+#endif
 
 #ifdef __APPLE__
 

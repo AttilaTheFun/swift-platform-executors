@@ -32,6 +32,9 @@ import WinSDK
 import Glibc
 #elseif canImport(Musl)
 import Musl
+#elseif os(WASI)
+import WASILibc
+import wasi_pthread
 #else
 #error("The concurrency lock module was unable to identify your C library.")
 #endif
