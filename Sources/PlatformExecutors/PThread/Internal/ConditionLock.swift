@@ -33,6 +33,7 @@ import Glibc
 #elseif canImport(Musl)
 import Musl
 #elseif os(WASI)
+import CPlatformExecutors
 import WASILibc
 import wasi_pthread
 #else
@@ -105,6 +106,43 @@ final class ConditionVariable<Value: ~Copyable> {
     pthread_cond_wait(condition, lock)
     #endif
   }
+
+  #if os(WASI)
+  /// Waits at most `timeout`; true when woken, false on the timeout.
+  private func _wait(timeout: Duration) -> Bool {
+    var deadline = timespec()
+    CPlatformExecutors_wasi_deadline(Self.nanoseconds(timeout), &deadline)
+    return pthread_cond_timedwait(condition, lock, &deadline) != ETIMEDOUT
+  }
+
+  /// A duration as whole nanoseconds, saturating at `Int64.max`.
+  private static func nanoseconds(_ duration: Duration) -> Int64 {
+    let (seconds, secondsOverflow) = duration.components.seconds.multipliedReportingOverflow(by: 1_000_000_000)
+    if secondsOverflow { return .max }
+    let nanoseconds = duration.components.attoseconds / 1_000_000_000
+    let (total, totalOverflow) = seconds.addingReportingOverflow(nanoseconds)
+    return totalOverflow ? .max : total
+  }
+
+  /// Like `wait(when:block:)`, giving up once `timeout` has elapsed (the
+  /// block then runs whether or not `when` holds).
+  func wait<Return, Failure: Error>(
+    until timeout: Duration,
+    when: (inout sending Value) -> Bool,
+    block: (inout sending Value) throws(Failure) -> Return
+  ) throws(Failure) -> Return {
+    self._lock()
+    defer {
+      self._unlock()
+    }
+    while !when(&state) {
+      if !self._wait(timeout: timeout) {
+        break
+      }
+    }
+    return try block(&state)
+  }
+  #endif
 
   func signal<Return, Failure: Error>(
     block: (inout sending Value) throws(Failure) -> Return

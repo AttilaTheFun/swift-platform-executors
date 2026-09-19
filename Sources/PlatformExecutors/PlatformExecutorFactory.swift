@@ -186,22 +186,9 @@ import WASILibc
 
 /// Provides a reasonable default executor factory for `wasm32-unknown-wasip1-threads`.
 ///
-/// The executors are the pthread executors: wasi-libc maps `pthread_create`
-/// onto `wasi_thread_spawn`, so the pool's workers are real threads over the
-/// module's shared memory. The main executor takes over the thread that
-/// calls `run()` (the module's main thread).
-///
-/// By default the ``defaultExecutor`` has four executors — WASI reports one
-/// processor whatever the host has — and the size can be customized by
+/// By default the ``defaultExecutor`` uses four threads and the size can be customized by
 /// setting the `SWIFT_PLATFORM_DEFAULT_EXECUTOR_POOL_SIZE` environment
 /// variable (in the host's WASI environment).
-///
-/// - Note: Until the `CustomGlobalExecutors` feature is enabled by default,
-///   the `DefaultExecutorFactory` type alias is only honored on WASI when the
-///   module is compiled with `-Xfrontend -disable-availability-checking`.
-///   The stdlib shipped for the threads triple must also be built with
-///   `SWIFT_STDLIB_SINGLE_THREADED_CONCURRENCY=FALSE` (swiftlang/swift#92018)
-///   for main-thread isolation checks to be right.
 @available(macOS 9999, iOS 9999, watchOS 9999, tvOS 9999, visionOS 9999, *)
 @_spi(ExperimentalCustomExecutors) public struct PlatformExecutorFactory: ExecutorFactory {
   @_spi(ExperimentalCustomExecutors) public static let mainExecutor: any MainExecutor = PThreadMainExecutor()

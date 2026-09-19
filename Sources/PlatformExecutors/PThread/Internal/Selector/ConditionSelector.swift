@@ -23,38 +23,20 @@ import wasi_pthread
 /// ``whenReady(strategy:)`` waits for the flag, with a timed wait for the
 /// earliest pending deadline. Spurious wakeups just re-check the flag.
 @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-final class ConditionSelector {
-  private let mutex = UnsafeMutablePointer<pthread_mutex_t>.allocate(capacity: 1)
-  private let condition = UnsafeMutablePointer<pthread_cond_t>.allocate(capacity: 1)
-  /// Set by `wakeup()`, consumed by `whenReady`. Guarded by `mutex`.
-  private var pendingWakeup = false
+struct ConditionSelector: ~Copyable {
+  /// The wakeup flag: set by `wakeup()`, consumed by `whenReady`.
+  private let condition = ConditionVariable(false)
 
-  init() throws {
-    pthread_mutex_init(self.mutex, nil)
-    pthread_cond_init(self.condition, nil)
-  }
-
-  deinit {
-    pthread_cond_destroy(self.condition)
-    pthread_mutex_destroy(self.mutex)
-    self.condition.deallocate()
-    self.mutex.deallocate()
-  }
+  init() throws {}
 
   /// Blocks until `wakeup()` is called or the strategy's earliest deadline passes.
-  func whenReady(strategy: SelectorStrategy) throws {
-    pthread_mutex_lock(self.mutex)
-    defer { pthread_mutex_unlock(self.mutex) }
-
+  mutating func whenReady(strategy: SelectorStrategy) throws {
     switch strategy {
     case .now:
       // Nothing to wait for; a wakeup that already happened is consumed.
-      self.pendingWakeup = false
+      self.condition.signal { $0 = false }
     case .block:
-      while !self.pendingWakeup {
-        pthread_cond_wait(self.condition, self.mutex)
-      }
-      self.pendingWakeup = false
+      self.condition.wait(when: { $0 }, block: { $0 = false })
     case .blockUntilTimeout(let continuousClockInstant, let suspendingClockInstant):
       var timeout: Duration? = nil
       if let continuousClockInstant {
@@ -66,35 +48,16 @@ final class ConditionSelector {
       }
       guard let timeout, timeout > .zero else {
         // A deadline is already due: return so the executor pops it.
-        self.pendingWakeup = false
+        self.condition.signal { $0 = false }
         return
       }
-      var deadline = timespec()
-      CPlatformExecutors_wasi_deadline(Self.nanoseconds(timeout), &deadline)
-      while !self.pendingWakeup {
-        if pthread_cond_timedwait(self.condition, self.mutex, &deadline) == ETIMEDOUT {
-          break
-        }
-      }
-      self.pendingWakeup = false
+      self.condition.wait(until: timeout, when: { $0 }, block: { $0 = false })
     }
   }
 
   /// Wakes a `whenReady` in progress (or the next one). Callable from any thread.
   func wakeup() throws {
-    pthread_mutex_lock(self.mutex)
-    self.pendingWakeup = true
-    pthread_cond_signal(self.condition)
-    pthread_mutex_unlock(self.mutex)
-  }
-
-  /// A duration as whole nanoseconds, saturating at `Int64.max`.
-  private static func nanoseconds(_ duration: Duration) -> Int64 {
-    let (seconds, secondsOverflow) = duration.components.seconds.multipliedReportingOverflow(by: 1_000_000_000)
-    if secondsOverflow { return .max }
-    let nanoseconds = duration.components.attoseconds / 1_000_000_000
-    let (total, totalOverflow) = seconds.addingReportingOverflow(nanoseconds)
-    return totalOverflow ? .max : total
+    self.condition.signal { $0 = true }
   }
 }
 #endif
