@@ -41,10 +41,9 @@ int CPlatformExecutors_pthread_getname_np(pthread_t thread, char *name, size_t l
 // 4 MiB stack of its own.
 int CPlatformExecutors_wasi_pthread_create(pthread_t *thread, void *(*start)(void *), void *arg);
 
-// An absolute CLOCK_REALTIME deadline `nanoseconds` from now, for
-// pthread_cond_timedwait (CLOCK_REALTIME is a pointer macro in wasi-libc,
-// which Swift cannot import). Saturates instead of overflowing.
-void CPlatformExecutors_wasi_deadline(long long nanoseconds, struct timespec *deadline);
+// The realtime clock for pthread_cond_timedwait. CLOCK_REALTIME is a
+// pointer macro in wasi-libc, which Swift cannot import; the constant can be.
+static const clockid_t CPlatformExecutors_CLOCK_REALTIME = CLOCK_REALTIME;
 
 // The thread-name calls matching the Linux shims use
 // (no-ops: wasi-libc declares but does not define them).

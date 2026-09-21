@@ -110,18 +110,31 @@ final class ConditionVariable<Value: ~Copyable> {
   #if os(WASI)
   /// Waits at most `timeout`; true when woken, false on the timeout.
   private func _wait(timeout: Duration) -> Bool {
-    var deadline = timespec()
-    CPlatformExecutors_wasi_deadline(Self.nanoseconds(timeout), &deadline)
+    var deadline = Self.realtimeDeadline(after: timeout)
     return pthread_cond_timedwait(condition, lock, &deadline) != ETIMEDOUT
   }
 
-  /// A duration as whole nanoseconds, saturating at `Int64.max`.
-  private static func nanoseconds(_ duration: Duration) -> Int64 {
-    let (seconds, secondsOverflow) = duration.components.seconds.multipliedReportingOverflow(by: 1_000_000_000)
-    if secondsOverflow { return .max }
-    let nanoseconds = duration.components.attoseconds / 1_000_000_000
-    let (total, totalOverflow) = seconds.addingReportingOverflow(nanoseconds)
-    return totalOverflow ? .max : total
+  /// The absolute CLOCK_REALTIME time `timeout` from now, as
+  /// pthread_cond_timedwait wants it. A negative timeout is now; a timeout
+  /// too far for `time_t` saturates rather than wrapping.
+  private static func realtimeDeadline(after timeout: Duration) -> timespec {
+    var now = timespec()
+    if clock_gettime(CPlatformExecutors_CLOCK_REALTIME, &now) != 0 {
+      now = timespec()
+    }
+    let nanosecondsPerSecond: Int128 = 1_000_000_000
+    let nanoseconds = max(0, timeout.attoseconds / 1_000_000_000)
+    let (seconds, remainder) = nanoseconds.quotientAndRemainder(dividingBy: nanosecondsPerSecond)
+    var totalSeconds = Int128(now.tv_sec) + seconds
+    var totalNanoseconds = Int128(now.tv_nsec) + remainder
+    if totalNanoseconds >= nanosecondsPerSecond {
+      totalNanoseconds -= nanosecondsPerSecond
+      totalSeconds += 1
+    }
+    guard totalSeconds <= Int128(time_t.max) else {
+      return timespec(tv_sec: time_t.max, tv_nsec: Int(nanosecondsPerSecond - 1))
+    }
+    return timespec(tv_sec: time_t(totalSeconds), tv_nsec: Int(totalNanoseconds))
   }
 
   /// Like `wait(when:block:)`, giving up once `timeout` has elapsed (the

@@ -69,8 +69,6 @@ void CPlatformExecutors_dispatchMain(void) {
 #ifdef __wasi__
 
 #include <CPlatformExecutors.h>
-#include <limits.h>
-#include <time.h>
 
 #define CPLATFORM_EXECUTORS_WASI_THREAD_STACK_SIZE (4 * 1024 * 1024)
 
@@ -86,32 +84,6 @@ int CPlatformExecutors_wasi_pthread_create(pthread_t *thread, void *(*start)(voi
     }
     pthread_attr_destroy(&attr);
     return result;
-}
-
-void CPlatformExecutors_wasi_deadline(long long nanoseconds, struct timespec *deadline) {
-    struct timespec now;
-    if (clock_gettime(CLOCK_REALTIME, &now) != 0) {
-        now.tv_sec = 0;
-        now.tv_nsec = 0;
-    }
-    if (nanoseconds < 0) {
-        nanoseconds = 0;
-    }
-    long long seconds = nanoseconds / 1000000000LL;
-    long long remainder = nanoseconds % 1000000000LL;
-    long long total_seconds = (long long)now.tv_sec + seconds;
-    long long total_nanoseconds = (long long)now.tv_nsec + remainder;
-    if (total_nanoseconds >= 1000000000LL) {
-        total_nanoseconds -= 1000000000LL;
-        total_seconds += 1;
-    }
-    if (total_seconds < (long long)now.tv_sec || total_seconds > (long long)LONG_MAX) {
-        // Saturate: a deadline this far out is effectively "block".
-        total_seconds = LONG_MAX;
-        total_nanoseconds = 999999999LL;
-    }
-    deadline->tv_sec = (time_t)total_seconds;
-    deadline->tv_nsec = (long)total_nanoseconds;
 }
 
 // wasi-libc declares pthread_setname_np/pthread_getname_np but does not
